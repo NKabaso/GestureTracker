@@ -3,6 +3,7 @@ import mediapipe as mp
 import numpy as np
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
+from mediapipe.framework.formats import landmark_pb2
 
 def main():    
     """
@@ -52,9 +53,9 @@ def draw_detection_visuals(image, detection_result):
     FONT_THICKNESS = 1
     HANDEDNESS_TEXT_COLOR = (88, 205, 54) # vibrant green
     
-    mp_hands = mp.tasks.vision.HandLandmarksConnections
-    mp_drawing = mp.tasks.vision.drawing_utils
-    mp_drawing_styles = mp.tasks.vision.drawing_styles
+    mp_hands = mp.solutions.hands
+    mp_drawing = mp.solutions.drawing_utils
+    mp_drawing_styles = mp.solutions.drawing_styles
     
     hand_landmarks_list = detection_result.hand_landmarks
     which_hand_list = detection_result.handedness # Handedness represents whether the detected hands are left or right hands.
@@ -66,13 +67,25 @@ def draw_detection_visuals(image, detection_result):
         hand_landmarks = hand_landmarks_list[index]
         handedness = which_hand_list[index]
         
-       # Draw the hand landmarks.
+       # Convert landmarks to protobuf format
+        hand_landmarks_proto = landmark_pb2.NormalizedLandmarkList()
+        
+        hand_landmarks_proto.landmark.extend([
+            landmark_pb2.NormalizedLandmark(
+                x=landmark.x,
+                y=landmark.y,
+                z=landmark.z
+            ) for landmark in hand_landmarks
+        ])
+        
+        # Draw the hand landmarks
         mp_drawing.draw_landmarks(
             annotated_image,
-            hand_landmarks, 
+            hand_landmarks_proto,
             mp_hands.HAND_CONNECTIONS,
             mp_drawing_styles.get_default_hand_landmarks_style(),
-            mp_drawing_styles.get_default_hand_connections_style()) 
+            mp_drawing_styles.get_default_hand_connections_style()
+        )
     
         #Gets the top left corner of the detected hand's bounding box
         height, width, _ = annotated_image.shape
@@ -88,5 +101,6 @@ def draw_detection_visuals(image, detection_result):
                     (text_x, text_y),cv2.FONT_HERSHEY_DUPLEX,
                     FONT_SIZE, HANDEDNESS_TEXT_COLOR, FONT_THICKNESS, cv2.LINE_AA)
     return annotated_image
+
 
 main()

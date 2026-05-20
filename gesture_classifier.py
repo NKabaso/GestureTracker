@@ -1,20 +1,27 @@
-from google.colab import files
 import os
 import tensorflow as tf
-assert tf.__version__.startswith('2')
-
-from mediapipe_model_maker import gesture_recognizer
-
+import cv2
+import mediapipe as mp
+import numpy as np
 import matplotlib.pyplot as plt
 
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+
+mp_hands = mp.solutions.hands
+hands = mp_hands.Hands(static_image_mode=True)
+
 def train_gesture_classifier(data_file_path):
-    #verify
-    print(data_file_path)
+    if not os.path.exists(data_file_path):
+        raise ValueError("Dataset path does not exist")
+    
     labels = []
     for i in os.listdir(data_file_path):
-        if os.path.isdir(os.path.join(data_file_path), i):
+        folder_path = os.path.join(data_file_path, i)
+        if os.path.isdir(folder_path):
             labels.append(i)
-    print(labels)
+            
+    print("Labels found in dataset:", labels)
     
     '''
     Pre-packaged hand detection model from MediaPipe Hands to detect the hand landmarks from the images. 
@@ -22,6 +29,7 @@ def train_gesture_classifier(data_file_path):
     The resulting dataset will contain the extracted hand landmark positions from each image, rather than images themselves.
     '''
     data = gesture_recognizer.Dataset.from_folder(dirname= data_file_path, hparams= gesture_recognizer.HandDataPreprocessingParams())
+    data = data.shuffle(100)
     #split the data into train, val and test sets
     train_data, rest_data = data.split(0.8) #80% for training, 20% for validation and testing
     val_data, test_data = rest_data.split(0.5) #50% of the remaining 20% for validation, 50% for testing
@@ -29,7 +37,13 @@ def train_gesture_classifier(data_file_path):
     '''
     Train a gesture classifier using the preprocessed dataset.
     '''
-    hparams = gesture_recognizer.HParams(export_dir="exported_model")
+    #hparams = gesture_recognizer.HParams(export_dir="exported_model")
+    hparams = gesture_recognizer.HParams(
+        learning_rate=0.001,
+        batch_size=16,
+        epochs=20,
+        export_dir="exported_model"
+    )
     options = gesture_recognizer.GestureRecognizerOptions(hparams=hparams)
     model = gesture_recognizer.GestureRecognizer.create(
     train_data=train_data,
@@ -41,5 +55,57 @@ def train_gesture_classifier(data_file_path):
     loss, acc = model.evaluate(test_data, batch_size=1)
     print(f"Test loss:{loss}, Test accuracy:{acc}")
     
-    return model
+    model.export_model()
+    print("Exported model files:", os.listdir("exported_model"))
+    print("Model saved at:", os.path.abspath("exported_model/gesture_recognizer.task"))
     
+def extract_hand_landmarks(image):
+    rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB) # Convert the image to RGB format
+    results = hands.process(rgb_image) # Process the image to detect hand landmarks
+    if not results.multi_hand_landmarks:
+        return None
+    hand = results.multi_hand_landmarks[0] # Get the first detected hand
+    landmarks = []
+    for landmark in hand.landmark:
+        landmarks.append((landmark.x, landmark.y, landmark.z)) # Append the normalized coordinates of the landmark
+    return landmarks
+
+def build_dataset(data_file_path):
+    X =[]
+    Y = []
+    for label in os.listdir(data_file_path):
+        folder_path = os.path.join(data_file_path, label)
+        if os.path.isdir(folder_path):
+            for image_file in os.listdir(folder_path):
+                image_path = os.path.join(folder_path, image_file)
+                image = cv2.imread(image_path)
+                landmarks = extract_hand_landmarks(image)
+                if landmarks is not None:
+                    X.append(landmarks)
+                    Y.append(label)
+
+    return np.array(X), np.array(Y)
+
+def train(X, Y):
+    X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.2, random_state=42)
+    model = RandomForestClassifier(n_estimators=100, random_state=42)
+    model.fit(X_train, Y_train)
+    print("Accuracy:", model.score(X_test, Y_test))
+    
+def main():
+    cap = cv2.VideoCapture(0)
+    file_path = "path_to_your_dataset"
+    data, labels = build_dataset(file_path)
+    train(data, labels)
+    
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        landmarks = extract_hand_landmarks(frame)
+        if landmarks is not None:
+            # Here you would use the trained model to predict the gesture based on the landmarks
+            pass
+        cv2.imshow('Hand Gesture Recognition', frame)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
