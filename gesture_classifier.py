@@ -4,9 +4,10 @@ import cv2
 import mediapipe as mp
 import numpy as np
 import matplotlib.pyplot as plt
-
+import joblib
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
+from model_maker import extract_hand_landmarks
 
 mp_hands = mp.solutions.hands
 hands = mp_hands.Hands(static_image_mode=True)
@@ -59,53 +60,35 @@ def train_gesture_classifier(data_file_path):
     print("Exported model files:", os.listdir("exported_model"))
     print("Model saved at:", os.path.abspath("exported_model/gesture_recognizer.task"))
     
-def extract_hand_landmarks(image):
-    rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB) # Convert the image to RGB format
-    results = hands.process(rgb_image) # Process the image to detect hand landmarks
-    if not results.multi_hand_landmarks:
-        return None
-    hand = results.multi_hand_landmarks[0] # Get the first detected hand
-    landmarks = []
-    for landmark in hand.landmark:
-        landmarks.append((landmark.x, landmark.y, landmark.z)) # Append the normalized coordinates of the landmark
-    return landmarks
 
-def build_dataset(data_file_path):
-    X =[]
-    Y = []
-    for label in os.listdir(data_file_path):
-        folder_path = os.path.join(data_file_path, label)
-        if os.path.isdir(folder_path):
-            for image_file in os.listdir(folder_path):
-                image_path = os.path.join(folder_path, image_file)
-                image = cv2.imread(image_path)
-                landmarks = extract_hand_landmarks(image)
-                if landmarks is not None:
-                    X.append(landmarks)
-                    Y.append(label)
-
-    return np.array(X), np.array(Y)
-
-def train(X, Y):
-    X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.2, random_state=42)
-    model = RandomForestClassifier(n_estimators=100, random_state=42)
-    model.fit(X_train, Y_train)
-    print("Accuracy:", model.score(X_test, Y_test))
-    
 def main():
     cap = cv2.VideoCapture(0)
     file_path = "path_to_your_dataset"
-    data, labels = build_dataset(file_path)
-    train(data, labels)
+    model = joblib.load("hand_gesture_model.pkl")
     
     while True:
-        ret, frame = cap.read()
-        if not ret:
+        success, frame = cap.read()
+        if not success:
+            print("Failed to capture video")
             break
-        landmarks = extract_hand_landmarks(frame)
+        
+        landmarks = extract_hand_landmarks(frame)    
         if landmarks is not None:
-            # Here you would use the trained model to predict the gesture based on the landmarks
-            pass
+            
+            landmarks = np.array(landmarks)
+            print("Shape before flatten:", landmarks.shape)
+            landmarks = landmarks.flatten()
+            print("Shape after flatten:", landmarks.shape)
+            landmarks = landmarks.reshape(1, -1)
+            print("Shape before predict:", landmarks.shape)
+            
+            pred = model.predict(landmarks)
+            cv2.putText(frame, str(pred[0]), (50, 50),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,0), 2)
+        
         cv2.imshow('Hand Gesture Recognition', frame)
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
+
+if __name__ == "__main__":
+    main()
