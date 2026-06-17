@@ -12,6 +12,7 @@ from model_maker import extract_hand_landmarks
 mp_hands = mp.solutions.hands
 hands = mp_hands.Hands(static_image_mode=True)
 
+#Old version that uses Gesture Recognizer API, which is no longer supported in the latest version of MediaPipe.
 def train_gesture_classifier(data_file_path):
     if not os.path.exists(data_file_path):
         raise ValueError("Dataset path does not exist")

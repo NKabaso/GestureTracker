@@ -1,3 +1,4 @@
+import math
 import os
 import tensorflow as tf
 import cv2
@@ -25,11 +26,19 @@ def extract_hand_landmarks(image):
         return None
     
     hand = results.multi_hand_landmarks[0] # Get the first detected hand
-    landmarks = []
-    for landmark in hand.landmark:
-        landmarks.append((landmark.x, landmark.y, landmark.z)) # Append the normalized coordinates of the landmark
-        
-    return landmarks
+    wrist = hand.landmark[mp_hands.HandLandmark.WRIST]
+    landmark_coordinates = [(lm.x, lm.y, lm.z) for lm in hand.landmark] # Extract the (x, y, z) coordinates of each landmark
+    
+    relative_coordinates = [(x - wrist.x, y - wrist.y, z - wrist.z) for (x, y, z) in landmark_coordinates] # Convert to relative coordinates
+    
+    # choose a hand size scale, e.g. distance from wrist to middle finger tip
+    mx, my, mz = landmark_coordinates[12]  # middle finger tip
+    scale = math.sqrt((mx - wrist.x)**2 + (my - wrist.y)**2 + (mz - wrist.z)**2)
+    if scale == 0:
+        return None
+
+    normalized = [(x / scale, y / scale, z / scale) for x, y, z in relative_coordinates]
+    return normalized
 
 def build_dataset(data_file_path):
     if not os.path.exists(data_file_path):
@@ -43,8 +52,8 @@ def build_dataset(data_file_path):
         cnt = 0
         if os.path.isdir(folder_path):
             for image_file in os.listdir(folder_path):
-                if cnt >= 100: # Limit to 100 images per class
-                    break
+                #if cnt >= 1600: # Limit to 1600 images per class
+                   # break
                 image_path = os.path.join(folder_path, image_file)
                 image = cv2.imread(image_path)
                 if image is None:
@@ -63,7 +72,7 @@ def build_dataset(data_file_path):
 
 def train(X, Y):
     print("Dataset dimensions:", X.shape, Y.shape)
-    # Flatten (2803, 21, 3) -> (2803, 63)
+    # Flatten (x, 21, 3) -> (x, 63)
     data = X.reshape(X.shape[0], -1)
     print("New shape:", data.shape)
     X_train, X_test, Y_train, Y_test = train_test_split(data, Y, test_size=0.2, random_state=42)
@@ -79,3 +88,4 @@ def main():
 
 if __name__ == "__main__":    
     main()
+
